@@ -13,8 +13,9 @@ class kleinanzeigen_monitor:
 
     def check_link(self):
         #go to given link
-        self.page.goto(self.link)
-        if self.cookies_accepted:
+        self.page.goto(self.link) 
+        #try to accept cookie banner
+        if self.cookie_accepted:
             return 
         print("Trying to accept cookies")
         try:
@@ -22,10 +23,14 @@ class kleinanzeigen_monitor:
             self.cookie_accepted = True
         except Exception as e:
             print(e)
-
-        print("Versuche Cookies zu akzeptieren...")
         
-        
+def main():
+    with sync_playwright() as p:
+        link = "https://www.kleinanzeigen.de/s-motorraeder-roller/preis:2000:4200/husqvarna-fe-250/k0c305"       
+        mein_bot = kleinanzeigen_monitor(p, link)
+        mein_bot.check_link()
+            
+main()
 
 
     
