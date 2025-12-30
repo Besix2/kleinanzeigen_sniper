@@ -1,0 +1,31 @@
+import re
+from playwright.sync_api import Playwright, sync_playwright, expect
+
+class kleinanzeigen_monitor:
+    def __init__(self, playwright: Playwright, link):
+        self.browser = playwright.chromium.launch(headless=False)
+        self.context = self.browser.new_context()
+        self.page = self.context.new_page()
+        self.link = link
+        self.seen_ids = set()
+        self.cookie_accepted = False
+        
+
+    def check_link(self):
+        #go to given link
+        self.page.goto(self.link)
+        if self.cookies_accepted:
+            return 
+        print("Trying to accept cookies")
+        try:
+            self.page.get_by_test_id("gdpr-banner-accept").click() #accept cookie banner
+            self.cookie_accepted = True
+        except Exception as e:
+            print(e)
+
+        print("Versuche Cookies zu akzeptieren...")
+        
+        
+
+
+    
