@@ -23,6 +23,17 @@ class kleinanzeigen_monitor:
             self.cookie_accepted = True
         except Exception as e:
             print(e)
+
+        listings_parent = self.page.locator("#srchrslt-content")
+        listings = listings_parent.locator('//*[@id="srchrslt-adtable"]')
+        listings_list = listings.locator("li")
+        print(listings_list.all())
+        for li in listings_list.all():
+            headline = li.locator('h2 > a')
+            print(headline.get_attribute("href"))
+        test = "test"
+
+
         
 def main():
     with sync_playwright() as p:
