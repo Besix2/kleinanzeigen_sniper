@@ -3,10 +3,18 @@ import os
 import random
 import time
 import json
+from groq import Groq
+from dotenv import load_dotenv
+import yaml
 
 
 class kleinanzeigen_monitor:
-    def __init__(self, playwright: Playwright, link):
+    def __init__(self, playwright: Playwright, link, categorie_for_this_instance):
+        # load api keys
+        load_dotenv() 
+        #generall stuff
+        self.categorie = categorie_for_this_instance
+        #load playwright
         self.browser = playwright.chromium.launch(headless=False)
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
@@ -17,10 +25,13 @@ class kleinanzeigen_monitor:
         self.cache_name =f"{str(self.link).split("/")[-2]}.json"
         self.id_folder = "cached_ids"
         self.full_cache_path = os.path.join(self.id_folder, self.cache_name)
-        os.makedirs(self.id_folder, exist_ok=True)
+        #os.makedirs(self.id_folder, exist_ok=False)
         self.cache = {}
         #load cache
         self.scanned_offers = self.load_cache()
+        #load ai
+        self.ai = AiAnalyst()
+        
 
     def load_cache(self):
         #create new empty id cache
@@ -35,7 +46,6 @@ class kleinanzeigen_monitor:
                     self.cache = json.load(f) # loading cache into self
                 except json.JSONDecodeError:
                     self.cache = {} #if file is broken
-
     def check_link(self):
         # go to given link
         self.page.goto(self.link)
@@ -81,6 +91,27 @@ class kleinanzeigen_monitor:
             self.cache.update(data)
             with open(self.full_cache_path, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, indent=4, ensure_ascii=False)
+            self.offer_getter(data)
+                
+    def offer_getter(self, new_offer_data):
+        print("Scanning new offer...")
+        offer_link = new_offer_data
+        #offer_link = list(new_offer_data.values())[1]
+        full_link = f"https://kleinanzeigen.de{offer_link}"
+        self.page.goto(full_link)
+        self.page.get_by_test_id("gdpr-banner-accept").click()  # accept cookie banner
+        details_div = self.page.locator('//*[@id="viewad-details"]/div')
+        details_div_lis = details_div.locator("li")
+        offer_details_list = ""
+        for li in details_div_lis.all():
+            offer_details_list = f"{offer_details_list} \n" + str(li.inner_text())
+            #print(f"{li.inner_text()}")
+        offer_description = self.page.locator('//*[@id="viewad-description-text"]')
+        #print(offer_description.inner_text())
+        ai_data = offer_description.inner_text() + "\n" + offer_details_list + str(offer_link)
+        Ai_result = self.ai.analyze(ai_data, self.categorie)
+        print(Ai_result)
+        test = "l"
 
     def offer_observer(self):
         print("starting Tracking of new offers")
@@ -100,13 +131,36 @@ class kleinanzeigen_monitor:
             except Exception as e:
                 print(e)
         
-
+class AiAnalyst:
+    def __init__(self):
+        print("Loading config...")
+        with open("config.yaml") as f:
+            self.config = yaml.safe_load(f) #load yaml config
+        #loading api key
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    def get_prompt(self, categorie): #function to choose prompt based on categorie
+        return self.config.get(categorie)
+    
+    def analyze(self, text, categorie="default"):
+        print("starting analyszes")
+        system_prompt = self.get_prompt(categorie)
+        chat_completion = self.client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}
+            ],
+            model="llama-3.1-8b-instant",
+        )
+        print("finished analyzes")
+        return chat_completion.choices[0].message.content
 
 def main():
     with sync_playwright() as p:
-        link = "https://www.kleinanzeigen.de/s-preis:2000:4000/gasgas-ec-250/k0"
-        mein_bot = kleinanzeigen_monitor(p, link)
-        mein_bot.offer_observer()
+        #link = "https://www.kleinanzeigen.de/s-preis:2000:4000/gasgas-ec-250/k0"
+        link = "/s-anzeige/gasgas-ec-250-enduro-baujahr-2008-belgische-papiere/3284149557-305-7455"
+        mein_bot = kleinanzeigen_monitor(p, link, "motorrad")
+        #mein_bot.offer_observer()
+        mein_bot.offer_getter(link)
 
 
 main()
