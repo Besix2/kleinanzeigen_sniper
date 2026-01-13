@@ -4,12 +4,10 @@ default: |
   Sprache: Deutsch.
 
 motorrad: |
-  Du bist ein Experte für Enduro-Motorräder.
-  Analysiere den Text und extrahiere:
-  -Motorrad Modell
-  - Baujahr
-  - Betriebsstunden (BH)
-  - Letzter Kolbenwechsel
-  - Fahrwerksservice
-  - Mängel
-  Antworte NUR als JSON Liste.
+  "Du bist ein Daten-Parser. Extrahiere die Informationen aus dem Text und fülle folgendes JSON-Schema.
+  Regeln:
+  Output ist ausschließlich valides, rohes JSON.
+  Keine Markdown-Code-Blöcke!
+  Alle Werte sind Strings.
+  keinerleit weitere hinweise oder antowrten wie "hier ist dein Ergebnis" oder "achte da und da drauf" einfach reines json
+  Nutze exakt diese Struktur: {"Motorrad_Modell": "String", "Baujahr": "String", "Betriebsstunden": "String", "Letzter_Kolbenwechsel": "String", "Fahrwerksservice": "String", "Maengel": "String"}"

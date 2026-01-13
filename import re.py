@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import yaml
 from datetime import datetime
 import requests
+import traceback
 
 
 class kleinanzeigen_monitor:
@@ -43,6 +44,7 @@ class kleinanzeigen_monitor:
         #create new empty id cache
         if not os.path.exists(self.full_cache_path):
             print(f"Erstelle neue Datenbank: {self.cache_name}")
+            os.makedirs(self.id_folder, exist_ok=True)
             with open(self.full_cache_path, "w", encoding="utf-8") as f:
                 #writing empty directory
                 json.dump({}, f)
@@ -103,11 +105,17 @@ class kleinanzeigen_monitor:
                 
     def offer_getter(self, new_offer_link):
         print("Scanning new offer...")
-        new_offer_link
         #offer_link = list(new_offer_data.values())[1]
         full_link = f"https://kleinanzeigen.de{new_offer_link}"
-        self.page.goto(full_link)
-        self.page.get_by_test_id("gdpr-banner-accept").click()  # accept cookie banner
+        self.page.goto(full_link, wait_until="domcontentloaded")
+        
+        cookie_button = self.page.get_by_test_id("gdpr-banner-accept")  # accept cookie banner
+        if cookie_button.is_visible():
+            print("Found cookies banner. Clicking it...")
+            cookie_button.click()
+        else:
+            print("Found no cookie banner. Continuing")
+            
         details_div = self.page.locator('//*[@id="viewad-details"]/div')
         details_div_lis = details_div.locator("li")
         offer_details_list = ""
@@ -153,15 +161,16 @@ class kleinanzeigen_monitor:
         else:
             #older than one month
             score = 10
-        if "sehr gut" in clean_ratings[0].lower():
-            score += 30
-        elif "ok" in clean_ratings[0].lower():
-            score += 10
-        
-        if len(clean_ratings) == 3:
-            score += 20
-        elif len(clean_ratings) == 2:
-            score += 10
+        if len(clean_ratings) > 0:
+            if "sehr gut" in clean_ratings[0].lower():
+                score += 30
+            elif "ok" in clean_ratings[0].lower():
+                score += 10
+            
+            if len(clean_ratings) == 3:
+                score += 20
+            elif len(clean_ratings) == 2:
+                score += 10
         print(Ai_result, score)
         return Ai_result, score
         
@@ -174,22 +183,55 @@ class kleinanzeigen_monitor:
         while True:
             try:
                 scanned_offers = self.check_link()
-                new_ids = scanned_offers - self.cache.keys()
+                old_offers = self.cache.keys()
+                new_ids = scanned_offers - old_offers
+                new_data = {id: scanned_offers[id] for id in new_ids}
+                #self.write_cache(new_data)
+                self.write_cache(scanned_offers)
                 if len(new_ids) == 0:
                     print("No new Listings found. Sleeping again.")
-                    wait_time = random.uniform(60, 120)
+                    wait_time = random.uniform(60, 180)
                     time.sleep(wait_time)
                     
                 else:
                     for o in new_ids:
-                        offer_link = scanned_offers[new_ids[o]] #getting the link from the new offer
+                        offer_link = new_data[o] #getting the link from the new offer
                         Ai_result, seller_score = self.offer_getter(offer_link)
+                        self.notifyer(Ai_result, seller_score, offer_link)
                         
                         
             except Exception as e:
                 print(e)
-    def notifyer(self, Ai_result, seller_score):
-        pass
+                traceback.print_exc()
+                
+                
+    def notifyer(self, Ai_result, seller_score, link):
+        TOKEN = os.getenv("TELEGRAM_TOKEN")
+        CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+        
+        try:
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            ai_data = json.loads(Ai_result)
+            
+            formatted_text = "\n".join([f"{key}: {value}" for key, value in ai_data.items()])
+            full_link = f"https://kleinanzeigen.de{link}" #making a completed link
+            html_text = f"Found new offer: \n{formatted_text}\nSeller score: {seller_score}\n<a href='{full_link}'>👉Zum Angebot</a>"
+            payload = {
+                "chat_id": CHAT_ID,
+                "text": html_text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": False
+            }
+            
+            
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print("Succesfully send")
+            else:
+                print(f"Error: {response.text}")
+        except Exception as e:
+            print(f"Error: {e}")
+            
         #sends message to your phone about new offer
 class AiAnalyst:
     def __init__(self):
@@ -212,15 +254,30 @@ class AiAnalyst:
             model="llama-3.1-8b-instant",
         )
         print("finished analyzes")
-        return chat_completion.choices[0].message.content
+        if not chat_completion.choices:
+            print("Error. Ai delivered no data")
+            return 0
+
+        Ai_result = chat_completion.choices[0].message.content
+        return Ai_result
 
 def main():
     with sync_playwright() as p:
-        #link = "https://www.kleinanzeigen.de/s-preis:2000:4000/gasgas-ec-250/k0"
-        link = "/s-anzeige/gasgas-ec-250-enduro-baujahr-2008-belgische-papiere/3284149557-305-7455"
+        link = "https://www.kleinanzeigen.de/s-preis:2000:4000/gasgas-ec-250/k0"
+        #link = "/s-anzeige/gasgas-ec-250-enduro-baujahr-2008-belgische-papiere/3284149557-305-7455"
         mein_bot = kleinanzeigen_monitor(p, link, "motorrad")
-        #mein_bot.offer_observer()
-        mein_bot.offer_getter(link)
+        # mein_bot.offer_observer()
+        # mein_bot.offer_getter(link)
+        # ai_asnwer = {
+        #     "MotorradModell": "EC 250",
+        #     "Baujahr": "2008",
+        #     "Betriebsstunden": "nicht angegeben",
+        #     "Letzter Kolbenwechsel": "nicht angegeben",
+        #     "Fahrwerksservice": "nicht angegeben",
+        #     "Maengel": "nicht erwähnt",
+        # }
+        #mein_bot.notifyer(ai_asnwer, 80, "https://google.com")
+        mein_bot.offer_observer()
 
 
 main()
